@@ -79,6 +79,24 @@ function [E,info]=docembed(docs,varargin)
 %
 % More About:
 %
+% REMARK: ONE-OFF INSTALLATION OF PYTHON PACKAGES AND OF THE MODEL. The
+% default backend needs, on the computer where MATLAB runs, a Python 3.9 or
+% later with the package sentence-transformers:
+%      python -m pip install sentence-transformers
+% (a virtual environment is recommended; the Python to use is selected with
+% the option pythonexe or with pyenv). The command installs the software
+% which runs the neural network (torch, transformers, about 0.5-1 GB, more
+% on Linux with CUDA). The network itself, the model, is not part of the
+% package: the first time a model is used it is downloaded from
+% huggingface.co (about 90 MB for all-MiniLM-L6-v2) and stored in the
+% cache of Hugging Face, ~/.cache/huggingface/hub on macOS and Linux and
+% C:\Users\<user>\.cache\huggingface\hub on Windows (folder given by the
+% environment variable HF_HOME, if it is set). Internet is needed only for
+% this download: afterwards the documents are processed locally and are
+% never sent to a server. Without sentence-transformers the function
+% stops with an error (backend 'sbert') or uses GloVe (backend 'auto'; it
+% needs the package gensim). 
+%
 % HOW MATLAB CALLS PYTHON. The "MATLAB Engine API for Python" is the
 % interface in the opposite direction (Python calls MATLAB). To call Python
 % from MATLAB the tools are pyenv (selects the installation of Python),
@@ -234,7 +252,8 @@ end
 if status~=0
     error('FSDA:docembed:PythonFailed', ...
         ['Python failed. Message:\n%s\nThe packages required by the backend ' ...
-        'must be installed in the Python which is used (see the help).'],out)
+        'must be installed in the Python which is used, for example: ' ...
+        'python -m pip install sentence-transformers (see REMARK in the help).'],out)
 end
 
 %% Read the embeddings
@@ -336,5 +355,4 @@ end
 %:     savemat(sys.argv[2], {"E": E, "backend": backend, "model": name})
 %:     print("saved %d x %d embeddings (%s, %s)" % (E.shape[0], E.shape[1], backend, name))
 %%%PYTHON-END
-
 %FScategory:CLUS-Sphere

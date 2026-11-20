@@ -19,8 +19,9 @@
 %   sphereplot               plot for p=2 and p=3
 %   sphereprojplot           plot for p>3 (projection on 3 dimensions)
 % The sections below can be run one at a time (each starts with clearvars).
-% They go from the distributions to the clustering functions, and then to
-% high dimension and to the use on document embeddings.
+% They go from the distributions to the clustering functions, then to
+% high dimension, to ordinary (non-directional) data analysed as directions
+% and compared with tclust, and finally to the use on document embeddings.
 
 %% THE DISTRIBUTIONS
 
@@ -435,6 +436,225 @@ figure
 boxplot([outS.fullsol outK.fullsol],'Labels',{'subsets','kmeans++'})
 ylabel('Objective function at the end of each start','Interpreter','latex','FontSize',16)
 
+%% NON-DIRECTIONAL DATA ANALYSED AS DIRECTIONS
+
+%% Old Faithful geyser (p=2): tclust on the data, tclustvmf on the directions
+% The data are not directional, but any data matrix can be turned into unit
+% vectors, and the question is what the directional model sees. Here: the
+% durations of two successive eruptions (271 pairs, file geyser2.txt of
+% FSDA), with three groups: short followed by long, long followed by short,
+% long followed by long. The directions
+% are obtained after standardising the variables (they have different
+% units) and dividing each row by its length: the direction of a unit is the
+% angle at which it is seen from the centre of the data. The choices are
+% the same for the two methods: k=3 groups, trimming level 0.05 and
+% restriction factor 10 (on the ratio between the eigenvalues in tclust, on
+% the ratio between the concentrations in tclustvmf). The data do not
+% have a natural direction, and the centre of the data is arbitrary:
+% a unit near the centre has an unstable direction and is the first
+% candidate to be trimmed or to be misclassified.
+clearvars;close all;
+rng(1)
+Y=load('geyser2.txt');      % duration of an eruption, duration of the next one
+k=3; alpha=0.05; rf=10;
+Z=(Y-mean(Y,1))./std(Y,0,1);
+D=Z./vecnorm(Z,2,2);
+outC=tclust(Y,k,alpha,rf,'msg',0);
+outV=tclustvmf(D,k,alpha,rf,'msg',0);
+idxall={outC.idx,outV.idx};
+fprintf('Labels found: tclust %s, tclustvmf %s (0 = trimmed)\n', ...
+    mat2str(unique(outC.idx)'),mat2str(unique(outV.idx)'))
+cmap=[0 0 0; lines(max([outC.idx; outV.idx; k]))];   % black: trimmed units
+method={'\texttt{tclust}','\texttt{tclustvmf}'};
+fs=16;
+figure
+th=linspace(0,2*pi,200);
+for j=1:2
+    subplot(2,2,j)
+    scatter(Y(:,1),Y(:,2),25,cmap(idxall{j}+1,:),'filled')
+    xlabel('Duration of the eruption','Interpreter','latex','FontSize',fs)
+    ylabel('Duration of the next eruption','Interpreter','latex','FontSize',fs)
+    title([method{j} ': original data'],'Interpreter','latex','FontSize',fs)
+    subplot(2,2,2+j)
+    plot(cos(th),sin(th),'k-'), hold on
+    scatter(D(:,1),D(:,2),25,cmap(idxall{j}+1,:),'filled')
+    axis equal off
+    title([method{j} ': directions'],'Interpreter','latex','FontSize',fs)
+end
+sel=outC.idx>0 & outV.idx>0;
+fprintf('Trimmed units: tclust %d, tclustvmf %d, in common %d\n', ...
+    sum(outC.idx==0),sum(outV.idx==0),sum(outC.idx==0 & outV.idx==0));
+fprintf('Adjusted Rand index between the two partitions (untrimmed in both): %.3f\n', ...
+    RandIndexFS(outC.idx(sel),outV.idx(sel)));
+disp('Group sizes: tclust, tclustvmf'), disp([accumarray(outC.idx(outC.idx>0),1) accumarray(outV.idx(outV.idx>0),1)])
+fprintf('Estimated concentrations of tclustvmf: %s\n',mat2str(outV.kappaopt',3));
+% Comment: the groups are in different directions as seen from the centre
+% of the data. The partitions of the two methods are expected to agree
+% except for the units near the boundaries between groups and near the
+% centre, which are the ones to inspect in the plots.
+
+%% Old Faithful (p=3): tclust, tclustvmf and tclustkent
+% tclustkent is defined on the sphere, p=3. The waiting time, which is in
+% geyser.txt but not in geyser2.txt, is added to the two successive durations
+% of the previous section: the two files describe the same sequence of
+% eruptions and are combined. There are still three groups, so k=3 is used
+% (as in the examples of tclust on geyser2). The three variables are
+% standardised and normalised as before. All the three methods use k=3,
+% alpha=0.05 and restriction factor 10. In the Kent
+% model the restriction acts on the concentration, and the ovalness
+% beta/kappa of each group is free within the limits of the model.
+clearvars;close all;
+rng(1)
+G=load('geyser.txt');       % duration of the eruption, waiting time (272 rows)
+G2=load('geyser2.txt');     % duration of the eruption, duration of the next one (271 rows)
+Y=[G(1:end-1,:) G2(:,2)];   % the two files describe the same sequence of eruptions
+k=3; alpha=0.05; rf=10;
+Z=(Y-mean(Y,1))./std(Y,0,1);
+D=Z./vecnorm(Z,2,2);
+outC=tclust(Y,k,alpha,rf,'msg',0);
+outV=tclustvmf(D,k,alpha,rf,'msg',0);
+outK=tclustkent(D,k,alpha,rf,'msg',0);
+fs=16;
+figure
+sphereplot(D,'group',outC.idx,'h',subplot(2,2,1),'legend',false,'markersize',6);
+title('\texttt{tclust} (partition of the original data)','Interpreter','latex','FontSize',fs)
+sphereplot(D,'group',outV.idx,'h',subplot(2,2,2),'legend',false,'markersize',6, ...
+    'cap',struct('mu',outV.muopt,'kappa',outV.kappaopt));
+title('\texttt{tclustvmf}','Interpreter','latex','FontSize',fs)
+sphereplot(D,'group',outK.idx,'h',subplot(2,2,3),'legend',false,'markersize',6, ...
+    'cap',outK.ellipse,'center',outK.gamma3);
+title('\texttt{tclustkent}','Interpreter','latex','FontSize',fs)
+cmap=[0 0 0; lines(k)];
+subplot(2,2,4)
+scatter3(Y(:,1),Y(:,2),Y(:,3),25,cmap(outC.idx+1,:),'filled')
+xlabel('Eruption','Interpreter','latex','FontSize',fs)
+ylabel('Waiting','Interpreter','latex','FontSize',fs)
+zlabel('Next eruption','Interpreter','latex','FontSize',fs)
+view(135,25)
+title('\texttt{tclust}: original data','Interpreter','latex','FontSize',fs)
+lab={outC.idx,outV.idx,outK.idx};
+meth={'tclust','tclustvmf','tclustkent'};
+rnd=zeros(3);
+for a=1:3
+    for b=1:3
+        s=lab{a}>0 & lab{b}>0;
+        rnd(a,b)=RandIndexFS(lab{a}(s),lab{b}(s));
+    end
+end
+disp('Adjusted Rand index between the partitions (units untrimmed in both):')
+disp(array2table(rnd,'RowNames',meth,'VariableNames',meth))
+fprintf('Trimmed units: tclust %d, tclustvmf %d, tclustkent %d\n', ...
+    sum(outC.idx==0),sum(outV.idx==0),sum(outK.idx==0));
+fprintf('Kent: kappa %s, beta %s\n',mat2str(outK.kappaopt',3),mat2str(outK.betaopt',3));
+% Comment: the upper left panel shows, on the sphere, the units coloured with
+% the groups found by tclust in the original space: it allows to compare
+% the two geometries. The 3-d scatter of the original data (lower right)
+% can be rotated.
+
+%% Household expenditure (p=4 and p=3): the composition of the budget
+% Expenditure of 20 single women (first 20 rows) and 20 single men on four
+% commodity groups (housing, food, goods, service): data "household" of
+% the R package HSAUR2 (Flury and Riedwyl, 1988), exported with
+% write.csv(household,"household.csv"). Here the matrix is typed in, so that
+% the example is self-contained. For these data the direction is natural: the
+% length of an expenditure vector is the size of the budget, which is very
+% different among households (goods goes from 6 to 6471), while the direction
+% describes how the budget is divided among the commodity groups. The rows
+% are divided by their length, without centring, because the origin (no
+% expenditure) is meaningful. The gender is not used in the clustering and
+% is the reference to evaluate the groups. Same choices for all the
+% methods: k=2, alpha=0.1 (4 of 40 households), restriction factor 10.
+clearvars;close all;
+rng(1)
+Y=[ ...
+    820 114 183 154; 184 74 6 20;...
+    921 66 1686 455; 488 80 103 115;...
+    721 83 176 104; 614 55 441 193;...
+    801 56 357 214; 396 59 61 80;...
+    864 65 1618 352; 845 64 1935 414;...
+    404 97 33 47; 781 47 1906 452;...
+    457 103 136 108; 1029 71 244 189;...
+    1047 90 653 298; 552 91 185 158;...
+    718 104 583 304; 495 114 65 74;...
+    382 77 230 147; 1090 59 313 177;...
+    497 591 153 291; 839 942 302 365;...
+    798 1308 668 584; 892 842 287 395;...
+    1585 781 2476 1740; 755 764 428 438;...
+    388 655 153 233; 617 879 757 719;...
+    248 438 22 65; 1641 440 6471 2063;...
+    1180 1243 768 813; 619 684 99 204;...
+    253 422 15 48; 661 739 71 188;...
+    1981 869 1489 1032; 1746 746 2662 1594;...
+    1865 915 5184 1767; 238 522 29 75;...
+    1199 1095 261 344; 1524 964 1739 1410
+    ];
+gender=[ones(20,1); 2*ones(20,1)];        % 1 female, 2 male
+vname={'housing','food','goods','service'};
+k=2; alpha=0.1; rf=10;
+D=Y./vecnorm(Y,2,2);
+outC=tclust(Y,k,alpha,rf,'msg',0);
+outV=tclustvmf(D,k,alpha,rf,'msg',0);
+fprintf('Estimated mean directions (budget profile) of tclustvmf:\n')
+disp(array2table(outV.muopt,'VariableNames',vname,'RowNames',{'group1','group2'}))
+% Comparison with the gender
+res=zeros(2,3);
+lab={outC.idx,outV.idx};
+for a=1:2
+    s=lab{a}>0;
+    res(a,:)=[sum(~s) RandIndexFS(gender(s),lab{a}(s)) ...
+        max(mean(gender(s)==1 & lab{a}(s)==1)+mean(gender(s)==2 & lab{a}(s)==2), ...
+            mean(gender(s)==1 & lab{a}(s)==2)+mean(gender(s)==2 & lab{a}(s)==1))];
+end
+disp(array2table(res,'RowNames',{'tclust (original)','tclustvmf (directions)'}, ...
+    'VariableNames',{'trimmed','ARI_gender','share_agreement'}))
+disp('Households of each gender in each group (columns: trimmed, group 1, group 2):')
+disp(accumarray([gender outC.idx+1],1,[2 k+1]))
+disp(accumarray([gender outV.idx+1],1,[2 k+1]))
+cmap=[0 0 0; lines(k)];
+fs=16;
+pairs=[2 1; 3 2];                  % food-housing, goods-food
+method={'\texttt{tclust}','\texttt{tclustvmf}'};
+figure
+for j=1:2
+    for i=1:2
+        subplot(2,2,2*(i-1)+j)
+        scatter(Y(:,pairs(i,1)),Y(:,pairs(i,2)),30,cmap(lab{j}+1,:),'filled')
+        set(gca,'XScale','log','YScale','log')
+        xlabel(vname{pairs(i,1)},'Interpreter','latex','FontSize',fs)
+        ylabel(vname{pairs(i,2)},'Interpreter','latex','FontSize',fs)
+        title(method{j},'Interpreter','latex','FontSize',fs)
+    end
+end
+% (the log scale is used only for the plots)
+
+% Kent needs p=3: service is dropped (it is strongly correlated with goods
+% and housing) and the three remaining variables are used
+D3=Y(:,1:3)./vecnorm(Y(:,1:3),2,2);
+outV3=tclustvmf(D3,k,alpha,rf,'msg',0);
+outK3=tclustkent(D3,k,alpha,rf,'msg',0);
+figure
+sphereplot(D3,'group',outV3.idx,'h',subplot(1,2,1),'legend',false, ...
+    'cap',struct('mu',outV3.muopt,'kappa',outV3.kappaopt));
+title('\texttt{tclustvmf}','Interpreter','latex','FontSize',fs)
+sphereplot(D3,'group',outK3.idx,'h',subplot(1,2,2),'legend',false, ...
+    'cap',outK3.ellipse,'center',outK3.gamma3);
+title('\texttt{tclustkent}','Interpreter','latex','FontSize',fs)
+o={outV3,outK3};
+mname={'tclustvmf','tclustkent'};
+for a=1:2
+    s=o{a}.idx>0;
+    fprintf('%s on housing, food and goods: trimmed %d, adjusted Rand index with gender %.3f\n', ...
+        mname{a},sum(~s),RandIndexFS(gender(s),o{a}.idx(s)));
+end
+% Comment: this is a small sample (40 households, groups of about 20): the
+% restriction on the concentrations and the number of units trimmed matter
+% more than in the large examples above, and the results should be read as
+% an illustration of the use of the functions, not as a comparison of
+% their performance. In the household data the groups found in the original
+% space and in the space of the directions can be compared with the gender
+% and with the composition of the budget: men devote a much larger share
+% to food.
+
 %% DOCUMENT EMBEDDINGS
 
 %% What is a document embedding? A primer for statisticians
@@ -701,3 +921,416 @@ disp(array2table(res,'RowNames',compose('p=%d',pall), ...
 % for large p (noise, biased kappa, as shown above), and (iii) the gain of
 % trimming and of the noise component over spherical k-means when the
 % collection contains documents which belong to no topic.
+
+%% A REAL COLLECTION: 20 NEWSGROUPS EMBEDDED WITH A SENTENCE TRANSFORMER
+
+%% Load the data and cluster the full 768 dimensions with tclustvmf
+% Dataset "20newsgroups_embedded" by Leland McInnes (Hugging Face:
+% lmcinnes/20newsgroups_embedded): 18170 posts of 20 newsgroups, with the
+% embedding of each post (sentence transformer all-mpnet-base-v2, 768
+% dimensions) and the newsgroup to which it was sent. The newsgroups are
+% are used to see to what extent the groups found are coherent with them.
+% The newsgroup is the forum, not a perfectly pure topic, so that a perfect
+% agreement is not expected. Data: (a) two csv files: embedding_20news.csv
+% (n rows, 768 columns, no header) and news20_info.csv (columns id,
+% newsgroup, map1, map2, post), exported from R with write.csv; (b) the
+% parquet file of the dataset, downloaded (103 MB, in the temporary folder)
+% and read with parquetread.
+clearvars;close all; rng(1)
+
+embfile  = which('embedding_20news.csv');
+infofile = which('news20_info.csv');
+if ~isempty(embfile) && ~isempty(infofile)
+    E = readmatrix(embfile);
+    I = readtable(infofile,'TextType','string','Encoding','UTF-8');
+    if size(E,2)==769 && all(E(:,1)==(1:size(E,1))')
+        E=E(:,2:end);                 % first column was the row number
+    end
+    [newsgroup,~,lab]=unique(string(I.newsgroup));      % lab: 1,...,20
+    % 2-d UMAP map (columns map1, map2 of the info file), only for drawing
+    map=[];
+    if all(ismember({'map1','map2'},I.Properties.VariableNames))
+        map=[I.map1 I.map2];
+    end
+else
+    url=['https://huggingface.co/datasets/lmcinnes/20newsgroups_embedded/' ...
+        'resolve/main/data/train-00000-of-00001.parquet'];
+    pq=fullfile(tempdir,'20newsgroups_embedded.parquet');
+    if ~isfile(pq)
+        fprintf('Downloading the dataset (about 103 MB) ...\n')
+        websave(pq,url,weboptions('Timeout',600));
+    end
+    T=parquetread(pq);
+    if iscell(T.embedding)
+        E=cell2mat(cellfun(@(x) double(x(:))',T.embedding,'UniformOutput',false));
+    else
+        E=double(T.embedding);
+    end
+    [newsgroup,~,lab]=unique(string(T.newsgroup));      % lab: 1,...,20
+    % 2-d UMAP map (field map), only for drawing
+    if iscell(T.map)
+        map=cell2mat(cellfun(@(x) double(x(:))',T.map,'UniformOutput',false));
+    else
+        map=double(T.map);
+    end
+end
+[n,p]=size(E);
+k=numel(newsgroup);
+fprintf('%d posts, %d dimensions, %d newsgroups\n',n,p,k)
+
+% Unit vectors, centred and renormalised (removes the cone in which the
+% embeddings lie, see the previous sections)
+tol = 1e-12;
+rowNorms = vecnorm(E,2,2);
+if any(abs(rowNorms - 1) > tol)
+    Y = E ./ rowNorms;
+else
+    Y = E;
+end
+Z = Y - mean(Y,1);
+Z = Z ./ vecnorm(Z,2,2);
+
+% The centred embeddings can have directions with no variation (numerically
+% null singular values), and tclustvmf stops with the message "Matrix X is
+% singular". Two ways to proceed, chosen with the flag nullflag:
+%  'remove'  : the null directions are projected out and the usual checks of
+%              the function are kept. Motivation: they carry no information,
+%              and the result does not change.
+%  'nocheck' : the rank check of tclustvmf is skipped. Motivation: the vMF
+%              model never inverts a covariance matrix, so full rank is not
+%              needed, and all the p coordinates are used as they are (the
+%              NaN/Inf check is skipped too, hence the test below).
+nullflag = 'remove';          % 'remove' or 'nocheck'
+extra = {};
+switch nullflag
+    case 'remove'
+        [~,S,V] = svd(Z,'econ');
+        s = diag(S);
+        keep = s > 1e-8*s(1);
+        fprintf('Directions kept: %d of %d\n',nnz(keep),numel(s))
+        Z = Z*V(:,keep);
+        Z = Z ./ vecnorm(Z,2,2);
+    case 'nocheck'
+        if any(isnan(Z(:))) || any(isinf(Z(:)))
+            error('Z contains NaN or Inf: nocheck cannot be used')
+        end
+        extra = {'nocheck',1};
+    otherwise
+        error('nullflag must be ''remove'' or ''nocheck''')
+end
+
+% tclustvmf on all the coordinates: k=20 groups (the number of newsgroups),
+% trimming level 0.05, restriction factor 10 on the concentrations. With
+% k*(p+1) larger than n/2 the initialisation is k-means++ on the cosine
+% distance.
+% Convergence: the concentration steps stop when the share of posts that
+% change group is below reftol (default 1e-6, that is no post at all when
+% n=18170) or after refsteps steps (default 15). With so many posts, in
+% 768 dimensions, a few posts at the boundary between groups keep changing
+% group, and with the defaults no start converges: the warning "Number of
+% subsets without convergence equal to 100%". For this size of problem
+% refsteps=100 and reftol=1e-3 (a tenth of a percent of the posts) are
+% used, and the share of starts which do not converge is printed.
+%
+% Uniform noise component and trimming. The data are probably not
+% contaminated, so the trimming level is small (alpha=0.01) and is used only
+% to see which posts are removed, while a uniform component on the sphere
+% (noise=true) can collect the posts which belong to no group. With noise,
+% out.idx is 0 for a trimmed post, 1,...,k for a group and k+1 for the noise
+% component. idxg keeps the groups only (0 for trimmed and noise posts): it
+% is used for all the indices which compare groups and newsgroups.
+alpha=0.01; rf=10; noise=true;       % noise=false: no uniform component
+nsamp=50; refsteps=100; reftol=1e-3;
+tic
+out=tclustvmf(Z,k,alpha,rf,'noise',noise,'nsamp',nsamp,'refsteps',refsteps, ...
+    'reftol',reftol,'msg',0,extra{:});
+idxg=out.idx.*(out.idx<=k);
+fprintf('tclustvmf: %.0f seconds, starts without convergence %.0f%%\n', ...
+    toc,100*out.notconver)
+fprintf('Posts in a group %d, trimmed %d, in the noise component %d\n', ...
+    sum(idxg>0),sum(out.idx==0),sum(out.idx==k+1))
+if noise
+    fprintf('Estimated proportion of the noise component %.1f%%\n',100*out.noiseprop)
+end
+% If the largest concentration is less than rf times the smallest the
+% restriction is not active, and a larger rf changes nothing
+fprintf('Concentrations: min %.1f, max %.1f, ratio %.1f (restrfactor %g)\n', ...
+    min(out.kappaopt),max(out.kappaopt),max(out.kappaopt)/min(out.kappaopt),rf)
+
+% Now we check how coherent are the groups with the newsgroups.
+% Contingency table (rows: newsgroups, columns: groups; the trimmed posts
+% are left out). Indices computed on the posts assigned to a group: adjusted
+% Rand index, normalised mutual information and purity (share of the posts
+% which belong to the dominant newsgroup of their group).
+N=accumarray([lab(idxg>0) idxg(idxg>0)],1,[k k]);
+P=N/sum(N(:)); pa=sum(P,2); pb=sum(P,1);
+MI=sum(sum(P.*log(P./(pa*pb)),'omitnan'));
+nmi=2*MI/(-sum(pa.*log(pa),'omitnan')-sum(pb.*log(pb),'omitnan'));
+purity=sum(max(N,[],1))/sum(N(:));
+fprintf('Adjusted Rand index %.3f, NMI %.3f, purity %.3f\n',RandIndexFS(N),nmi,purity)
+% The dominant newsgroup of each group and the share of the group it covers
+[nmax,dom]=max(N,[],1);
+% The group numbers given by the algorithm are arbitrary and change from one
+% run to another. Here the groups are RENUMBERED by their dominant newsgroup
+% (two groups with the same dominant newsgroup: the purer one first). From
+% now on the group numbers of the tables, of the heat map and of the 3-d
+% plot are the new ones, and the heat map has its large values on the
+% diagonal when the groups agree with the newsgroups. Trimmed (0) and noise
+% (k+1) posts keep their labels.
+[~,ord]=sortrows([dom(:) -nmax(:)./sum(N,1)']);
+newlab=zeros(k,1);
+newlab(ord)=1:k;
+map=[0; newlab; k+1];
+out.idx=map(out.idx+1);
+out.muopt=out.muopt(ord,:);
+out.kappaopt=out.kappaopt(ord);
+idxg=out.idx.*(out.idx<=k);
+N=N(:,ord);
+dom=dom(ord);
+nmax=nmax(ord);
+disp(array2table([sum(N,1)' round(100*nmax'./sum(N,1)')],'RowNames', ...
+    compose('group%d',1:k),'VariableNames',{'posts','dominant_pct'}))
+disp(table(string(newsgroup(dom)),'RowNames',compose('group%d',1:k),'VariableNames',{'dominant_newsgroup'}))
+% Agreement table: share of each newsgroup in each group (groups ordered by
+% their dominant newsgroup). Newsgroups spread over several groups, or
+% groups which collect several newsgroups, show where the clustering and the
+% labels differ. The trimmed posts, and the noise posts if there is a noise
+% component, are two more columns on the right: they are components of the
+% model like the groups. Each row is divided by the number of posts of the
+% newsgroup, so that it sums to 1 over all the columns, and the columns
+% to the right of the white line show how much of each newsgroup is not
+% assigned to a group. The columns are the groups 1,...,k, as in the tables
+% (renumbered above by dominant newsgroup, so the large values are on the
+% diagonal). Each label is 'group (number of its dominant newsgroup)', the
+% number being the position of the newsgroup in the rows of the figure, from
+% the top: a group which is off the diagonal has a number in brackets
+% different from its own position.
+nl=accumarray(lab,1,[k 1]);
+Ntrim=accumarray(lab,double(out.idx==0),[k 1]);
+Nnoise=accumarray(lab,double(out.idx==k+1),[k 1]);
+Nall=[N Ntrim];
+xl=[arrayfun(@(g) sprintf('%d (%d)',g,dom(g)),1:k,'UniformOutput',false) {'trim'}];
+if noise
+    Nall=[Nall Nnoise];
+    xl=[xl {'noise'}];
+end
+% Each row is labelled with the newsgroup and, in brackets, the group(s)
+% for which it is the dominant newsgroup (the same numbers as in the x-axis):
+% several numbers = a newsgroup split in several groups, '-' = a newsgroup
+% which is not dominant in any group.
+yl=cell(k,1);
+for r=1:k
+    g=find(dom==r);
+    if isempty(g)
+        gs='-';
+    else
+        gs=strjoin(compose('%d',g),',');
+    end
+    yl{r}=sprintf('%s (%s)',newsgroup(r),gs);
+end
+figure
+imagesc(Nall./nl)
+cb=colorbar;
+cb.Label.String='Share of the posts of the newsgroup';
+cb.Label.Interpreter='latex';
+cb.Label.FontSize=14;
+hold on
+plot([k k]+0.5,[0.5 k+0.5],'w-','LineWidth',2)
+set(gca,'YTick',1:k,'YTickLabel',yl,'TickLabelInterpreter','none','FontSize',10, ...
+    'XTick',1:size(Nall,2),'XTickLabel',xl)
+xlabel({'Group found by the clustering', ...
+    '(in brackets: number of the dominant newsgroup of the group, from the top of the rows)'}, ...
+    'Interpreter','latex','FontSize',14)
+ylabel({'Newsgroup','(in brackets: group(s) where it is dominant)'}, ...
+    'Interpreter','latex','FontSize',14)
+if noise
+    tl3='Right of the white line: trimmed posts and posts of the noise component.';
+else
+    tl3='Right of the white line: trimmed posts.';
+end
+title({'Share of the posts of each newsgroup (row) in each group found (column)', ...
+    sprintf('ARI = %.3f on the %d posts assigned to a group; each row sums to 1', ...
+    RandIndexFS(N),sum(N(:))),tl3}, ...
+    'Interpreter','latex','FontSize',15)
+
+% Which posts are trimmed, which are noise? A post is far from all the
+% groups if its largest cosine with a mean direction is small. NOTE: all the
+% posts for which no group is more likely than the uniform density get the
+% same value of the criterion (the constant density of the noise component),
+% and the trimming keeps the h posts with the largest values: the trimmed
+% posts are therefore taken among the posts with the noise value, and which
+% of them are trimmed and which are labelled noise is decided by ties. The
+% two sets must then look alike (same cosines, no newsgroup preferred); the
+% union is what the model finds far from every group.
+cmax=max(Z*out.muopt',[],2);
+state=1+(out.idx==0)+2*(out.idx==k+1);        % 1 group, 2 trimmed, 3 noise
+sn={'in a group','trimmed','noise'};
+tc=zeros(3,3);
+for s=1:3
+    if any(state==s)
+        tc(s,:)=[sum(state==s) median(cmax(state==s)) mean(cmax(state==s))];
+    end
+end
+disp(array2table(tc,'RowNames',sn,'VariableNames',{'posts','median_cosine','mean_cosine'}))
+% Share of each newsgroup which is trimmed or in the noise component (sorted)
+pt=100*Ntrim./nl;
+pn=100*Nnoise./nl;
+[~,so]=sort(pt+pn,'descend');
+disp(array2table([pt(so) pn(so)],'RowNames',cellstr(newsgroup(so)), ...
+    'VariableNames',{'pct_trimmed','pct_noise'}))
+
+% Colours: every group has the colour of its dominant newsgroup, so the
+% same colour means the same newsgroup in all the figures below (two groups
+% of one newsgroup have the same colour; their numbers tell them apart).
+% Trimmed and noise posts are light gray. Labels have the form
+% 'group (number of its dominant newsgroup)', as in the heat map.
+cmap=hsv(k);
+gcol=cmap(dom,:);
+lgray=[0.8 0.8 0.8];
+glab=arrayfun(@(g) sprintf('%d (%d)',g,dom(g)),1:k,'UniformOutput',false);
+disp(table((1:k)',newsgroup,'VariableNames',{'number','newsgroup'}))
+
+% FIGURE 1. Four panels.
+% (top left) cosine between the mean directions of the groups, in the
+%   original space, so nothing is lost by a projection: the groups are
+%   ordered by the dendrogram (average linkage on 1 minus the cosine), and
+%   blocks of similar groups appear on the diagonal;
+% (top right) the dendrogram;
+% (bottom) the 2-d UMAP map of the embeddings provided with the data, used
+%   only for drawing, with the posts coloured by newsgroup (left) and by group
+%   found (right; the number of the group is at the median of its posts).
+dcos=pdist(out.muopt,'cosine');
+Zl=linkage(dcos,'average');
+perm=optimalleaforder(Zl,dcos);
+Cmu=out.muopt*out.muopt';
+% The UMAP panels are drawn only if the map is available and not empty: if
+% not, the two other panels use all the space (1 by 2 layout)
+hasmap=exist('map','var') && size(map,1)==n && size(map,2)>=2 ...
+    && any(isfinite(map(:,1))) && range(map(:,1))>0;
+if hasmap
+    nr=2; nc=2;
+else
+    nr=1; nc=2;
+    fprintf('UMAP map not found in the info file: only the cosine matrix and the dendrogram are shown\n')
+end
+figure
+subplot(nr,nc,1)
+imagesc(Cmu(perm,perm))
+caxis([min(Cmu(:)) max(Cmu(~eye(k)))])
+colorbar
+set(gca,'XTick',1:k,'XTickLabel',glab(perm),'XTickLabelRotation',90, ...
+    'YTick',1:k,'YTickLabel',glab(perm),'TickLabelInterpreter','none','FontSize',9)
+axis square
+title({'Cosine between the mean directions of the groups', ...
+    'labels: group (dominant newsgroup)'},'Interpreter','latex','FontSize',13)
+subplot(nr,nc,2)
+dendrogram(Zl,0,'Reorder',perm,'Labels',glab,'Orientation','top');
+set(gca,'TickLabelInterpreter','none','FontSize',9,'XTickLabelRotation',90)
+ylabel('1 - cosine','Interpreter','latex','FontSize',13)
+title({'Dendrogram of the group centres','(average linkage)'}, ...
+    'Interpreter','latex','FontSize',13)
+if hasmap
+    for pp=1:2
+        subplot(2,2,2+pp)
+        if pp==1
+            col=cmap(lab,:);
+            gg=lab;
+            ttl={'UMAP map, posts coloured by newsgroup','number = newsgroup'};
+        else
+            col=repmat(lgray,n,1);
+            col(idxg>0,:)=gcol(idxg(idxg>0),:);
+            gg=idxg;
+            ttl={'UMAP map, posts coloured by group found','number = group; gray = trimmed or noise'};
+        end
+        scatter(map(:,1),map(:,2),3,col,'filled')
+        hold on
+        for j=1:k
+            c=median(map(gg==j,:),1);
+            text(c(1),c(2),sprintf('%d',j),'FontSize',11,'FontWeight','bold', ...
+                'HorizontalAlignment','center','BackgroundColor','w','Margin',1)
+        end
+        set(gca,'XTick',[],'YTick',[])
+        axis tight
+        title(ttl,'Interpreter','latex','FontSize',13)
+    end
+end
+
+% FIGURE 2. Three-dimensional view. The posts and the centres are projected
+% on the 3 dimensions where the mean directions are best separated (first 3
+% right singular vectors of the matrix of the mean directions). Only a small
+% share of the squared length is retained, so distances in the view are only
+% indicative: this figure is for orientation, the cosines above are exact.
+% The posts are small, almost transparent dots (dense areas show up as dark
+% areas); the centres are labelled points. The legend is clickable
+% (clickableMultiLegend): click on a name to hide or show the posts of the
+% groups, the trimmed and noise posts, or the centres with their labels.
+[~,~,Vm]=svd(out.muopt,'econ');
+V3=Vm(:,1:3);
+Yp=Z*V3;
+Cp=out.muopt*V3;
+retained=mean(sum(Yp.^2,2));
+sg=idxg>0;
+figure
+[sx,sy,sz]=sphere(40);
+surf(sx,sy,sz,'FaceColor',[0.9 0.9 1],'EdgeColor','none','FaceAlpha',0.06, ...
+    'HandleVisibility','off')
+hold on
+% names of the legend entries: the objects with the same name are shown or
+% hidden together
+nmP='Posts in a group';
+nmN='Trimmed and noise posts';
+nmC='Group centres and labels';
+hP=scatter3(Yp(sg,1),Yp(sg,2),Yp(sg,3),2,gcol(idxg(sg),:),'filled', ...
+    'MarkerFaceAlpha',0.05,'MarkerEdgeColor','none','DisplayName',nmP);
+hN=scatter3(Yp(~sg,1),Yp(~sg,2),Yp(~sg,3),2,lgray,'filled', ...
+    'MarkerFaceAlpha',0.05,'MarkerEdgeColor','none','DisplayName',nmN);
+hC=scatter3(Cp(:,1),Cp(:,2),Cp(:,3),120,gcol,'filled', ...
+    'MarkerEdgeColor','k','LineWidth',1,'DisplayName',nmC);
+ht=gobjects(k,1);
+for j=1:k
+    ht(j)=text(Cp(j,1),Cp(j,2),Cp(j,3),['  ' glab{j}],'FontSize',11, ...
+        'FontWeight','bold','BackgroundColor','w','Margin',1);
+end
+% The dots are almost transparent: legend entries need visible symbols,
+% which are drawn by empty proxy objects with the same name
+pP=plot3(NaN,NaN,NaN,'o','MarkerSize',7,'MarkerFaceColor',[0.4 0.4 0.4], ...
+    'MarkerEdgeColor','none','DisplayName',nmP);
+pN=plot3(NaN,NaN,NaN,'o','MarkerSize',7,'MarkerFaceColor',lgray, ...
+    'MarkerEdgeColor','none','DisplayName',nmN);
+pC=plot3(NaN,NaN,NaN,'o','MarkerSize',10,'MarkerFaceColor',[0.4 0.4 0.4], ...
+    'MarkerEdgeColor','k','DisplayName',nmC);
+axis equal
+grid on
+view(3)
+rotate3d on
+xlabel('proj 1','Interpreter','latex','FontSize',14)
+ylabel('proj 2','Interpreter','latex','FontSize',14)
+zlabel('proj 3','Interpreter','latex','FontSize',14)
+title({'Posts and group centres in the 3 dimensions of the centres', ...
+    sprintf('%.1f\\%% of the squared length of the posts is retained; click on the legend to hide or show', ...
+    100*retained)},'Interpreter','latex','FontSize',14)
+lgd=clickableMultiLegend([pP pN pC],'Location','northeastoutside','FontSize',12);
+% the labels (text objects have no DisplayName) follow the centres
+f0=lgd.ItemHitFcn;
+lgd.ItemHitFcn=@(s,e) cellfun(@(f) f(),{@() f0(s,e), @() set(ht,'Visible',hC.Visible)});
+
+%% Comparison with spherical k-means
+% Spherical k-means is the same algorithm with restrfactor=1 (all the groups
+% have the same concentration) and no trimming: every post is forced into a
+% group. To compare on the same posts, the partition of spherical k-means is
+% also evaluated on the posts which tclustvmf does not trim. Rows: tclustvmf
+% (on the posts that it assigns), spherical k-means on all the posts and on
+% the posts assigned by tclustvmf.
+tic
+outS=tclustvmf(Z,k,0,1,'nsamp',nsamp,'refsteps',refsteps,'reftol',reftol,'msg',0,extra{:});
+tS=toc;
+cont=@(idx) accumarray([lab(idx>0) idx(idx>0)],1,[k k]);
+nmifun=@(N) 2*sum(sum((N/sum(N(:))).*log((N/sum(N(:)))./((sum(N,2)/sum(N(:)))*(sum(N,1)/sum(N(:))))),'omitnan')) ...
+    ./(-sum((sum(N,2)/sum(N(:))).*log(sum(N,2)/sum(N(:))),'omitnan')-sum((sum(N,1)/sum(N(:))).*log(sum(N,1)/sum(N(:))),'omitnan'));
+purfun=@(N) sum(max(N,[],1))/sum(N(:));
+ev=@(idx) [mean(idx>0) RandIndexFS(cont(idx)) nmifun(cont(idx)) purfun(cont(idx))];
+sel=idxg>0;
+disp(array2table([ev(idxg); ev(outS.idx); ev(outS.idx.*sel)],'RowNames', ...
+    {'tclustvmf','spherical k-means (all posts)','spherical k-means (posts assigned by tclustvmf)'}, ...
+    'VariableNames',{'assigned','ARI','NMI','purity'}))
+fprintf('Spherical k-means: %.0f seconds, starts without convergence %.0f%%\n',tS,100*outS.notconver)
